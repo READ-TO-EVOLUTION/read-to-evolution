@@ -1,0 +1,907 @@
+// =====================
+// DB設計 v3（Micro中心完全対応）
+// SQLite対応: EnumはString型として実装
+// =====================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String @id @default(cuid())
+  email     String @unique
+  name      String?
+  passwordHash String @map("password_hash")
+  plan      String @default("FREE") @map("plan_type") // FREE, AFFILIATE, STUDY
+  affiliateState String @default("OFF") @map("affiliate_state") // OFF, ON, SUSPENDED
+  affiliatePlanType String @default("NONE") @map("affiliate_plan_type") // NONE, AFFILIATE_SUB, STUDY_SUB
+  affiliateEnabledAt DateTime? @map("affiliate_enabled_at")
+  affiliateSuspendedAt DateTime? @map("affiliate_suspended_at")
+  affiliateSuspendedReason String? @map("affiliate_suspended_reason")
+  
+  // Stripe関連
+  stripeCustomerId String? @map("stripe_customer_id")
+  stripeSubscriptionId String? @map("stripe_subscription_id")
+  stripeAffiliateCheckoutSessionId String? @map("stripe_affiliate_checkout_session_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  readingLogs     ReadingLog[]
+  snapshots       PublishedSnapshot[] @relation("SnapshotOwner")
+  ocrAssets       OCRAsset[]
+
+  studyItems      StudyItem[]
+  studyAttempts   StudyAttempt[]
+
+  giftsSent       Gift[] @relation("GiftSender")
+  giftsReceived   Gift[] @relation("GiftRecipient")
+  giftEvents      GiftEvent[]
+  rateBuckets     RateLimitBucket[]
+  koyoris         Koyori[]
+  affiliateStateLogs AffiliateStateLog[]
+  userBooks       UserBook[]
+
+  // Legacy relations (後で削除予定)
+  books         Book[]
+  subscriptions Subscription[]
+  studyRecords  StudyRecord[]
+  reviews       Review[]
+  readingProgress ReadingProgress[]
+  notifications Notification[]
+  revenueShares RevenueShare[]
+  revenueShareGateLogs RevenueShareGateLog[]
+  mesos         Meso[]
+  macros        Macro[]
+  ocrUsages     OcrUsage[]
+
+  @@index([plan])
+  @@index([affiliateState])
+  @@index([affiliatePlanType])
+  @@map("users")
+}
+
+model Book {
+  id            String  @id @default(cuid())
+  userId        String? @map("user_id") // Legacy: 後で削除予定
+  title         String
+  author        String?
+  isbn13        String? @unique
+  publisher     String?
+  publishedDate DateTime? @map("published_date")
+  coverImageUrl String? @map("cover_image_url")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  readingLogs   ReadingLog[]
+  snapshots     PublishedSnapshot[]
+  ocrAssets     OCRAsset[]
+  studyItems    StudyItem[]
+  gifts         Gift[]
+  userBooks     UserBook[]
+
+  // Legacy relations (後で削除予定)
+  user          User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  materials     Material[]
+  studyRecords  StudyRecord[]
+  reviews       Review[]
+  readingProgress ReadingProgress[]
+  ocrTexts      OcrText[]
+  mesos         Meso[]
+  macros        Macro[]
+
+  @@index([title])
+  @@index([author])
+  @@map("books")
+}
+
+//
+// ReadingLog（Micro）
+// 価値の中心。時系列に蓄積し、Meso/Macroの元になる。
+//
+
+model ReadingLog {
+  id          String @id @default(cuid())
+
+  userId      String @map("user_id")
+  bookId      String @map("book_id")
+
+  rangeType   String @map("range_type") // PAGE, CHAPTER, FREE
+  rangeText   String @map("range_text") // "p.45-62" / "第2章" / "概念Xの説明あたり"
+
+  pointText   String @map("point_text") // 30〜80字の要点（自分の言葉の担保）
+  reaction    String // CONFUSED, NARUHODO, DISCOVERY, MISUNDERSTOOD, HARD, FUN, NORMAL, PRACTICAL
+
+  questionText  String? @map("question_text") // 任意
+  privateMemo   String? @map("private_memo") // 非公開
+  highlightText String? @map("highlight_text") // 気になった言葉（任意）
+
+  visibility  String @default("PRIVATE") // PRIVATE, PARTIAL, PUBLIC
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  tags ReadingLogTag[]
+
+  // Snapshotのソースにもなる（MICRO Snapshotなら readingLogId を参照）
+  snapshotSources SnapshotSource[] @relation("ReadingLogSource")
+  
+  // Legacy relations (後で削除予定)
+  mesoItems MesoItem[]
+  macroItems MacroItem[]
+  koyoriItems KoyoriItem[]
+
+  @@index([userId, createdAt])
+  @@index([bookId, createdAt])
+  @@index([visibility])
+  @@map("reading_logs")
+}
+
+//
+// Tag（表記ゆれ防止のため正規化）
+// nounTags 最大3、verbTags 最大2 はAPIバリデーションで担保する
+//
+
+model Tag {
+  id        String @id @default(cuid())
+  type      String // NOUN, VERB
+  label     String // 正規化された表示名
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  readingLogs ReadingLogTag[]
+
+  @@unique([type, label])
+  @@index([label])
+  @@map("tags")
+}
+
+model ReadingLogTag {
+  id           String @id @default(cuid())
+  readingLogId String @map("reading_log_id")
+  tagId        String @map("tag_id")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  readingLog ReadingLog @relation(fields: [readingLogId], references: [id], onDelete: Cascade)
+  tag        Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([readingLogId, tagId])
+  @@index([tagId])
+  @@map("reading_log_tags")
+}
+
+//
+// PublishedSnapshot（公開固定）
+// 公開ページはSnapshotだけ表示する（SEO・負荷・著作権対策）
+//
+
+model PublishedSnapshot {
+  id          String @id @default(cuid())
+
+  type        String // MICRO, MESO, MACRO
+  status      String @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+
+  ownerUserId String @map("owner_user_id")
+  bookId      String @map("book_id")
+
+  // 公開用（SEO）
+  publicTitle String @map("public_title")
+  publicText  String @map("public_text") // 100〜180字などテンプレ生成済みの本文（OCR本文そのままは禁止）
+  // publicFields: JSON文字列（必須）
+  // 新フォーマット:
+  // {
+  //   rating: 1-5,
+  //   questionTitle: string (疑問見出し),
+  //   mainPoint: string (主点 1-2行),
+  //   myAnswer: string (自分の答え),
+  //   evidenceQuote: string (短い引用：句読点3つまで or 150字上限),
+  //   citation: { bookTitle: string, edition?: string, page?: string },
+  //   affiliate: { provider: string, url: string },
+  //   permitted: { showComment: boolean, showReadDate: boolean, showStudyHistory: boolean }
+  // }
+  publicFields String @map("public_fields") // JSON文字列（必須）: 公開レビューの本体データ
+
+  // 公開情報
+  visibility  String @default("PARTIAL") // PRIVATE, PARTIAL, PUBLIC - 公開ページ側の公開範囲
+  publishedAt DateTime? @map("published_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  slug        String @unique // 必須: 外部公開用のユニークスラッグ（例: cuid短縮+bookId）
+
+  owner User @relation("SnapshotOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  book  Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  sources SnapshotSource[]
+  revenueShareGateLogs RevenueShareGateLog[]
+
+  // Legacy relations (後で削除予定)
+  readingLogId String? @map("reading_log_id")
+  mesoId        String? @map("meso_id")
+  macroId       String? @map("macro_id")
+
+  @@index([type, status])
+  @@index([bookId, publishedAt])
+  @@index([ownerUserId, createdAt])
+  @@index([slug])
+  @@index([status, publishedAt])
+  @@map("published_snapshots")
+}
+
+//
+// SnapshotSource
+// SnapshotがどのMicro/Study等から作られたかを保持する
+// MICRO Snapshot：ReadingLog 1件
+// MESO Snapshot：ReadingLog 複数件
+// MACRO Snapshot：ReadingLog 複数件（読了時に生成）
+//
+
+model SnapshotSource {
+  id          String @id @default(cuid())
+
+  snapshotId  String @map("snapshot_id")
+  sourceType  String @map("source_type") // READING_LOG, STUDY_ITEM, OTHER
+  sourceId    String @map("source_id") // ReadingLog.id など
+  orderIndex  Int?   @map("order_index") // Meso/Macroで並び順を固定したい場合
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  snapshot PublishedSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  
+  // リレーション（sourceTypeに応じてどちらかが設定される）
+  readingLogId String? @map("reading_log_id")
+  studyItemId  String? @map("study_item_id")
+  readingLog   ReadingLog? @relation("ReadingLogSource", fields: [readingLogId], references: [id], onDelete: Cascade)
+  studyItem    StudyItem? @relation("StudyItemSource", fields: [studyItemId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@index([sourceType, sourceId])
+  @@unique([snapshotId, sourceType, sourceId])
+  @@map("snapshot_sources")
+}
+
+// =====================
+// OCR
+// =====================
+
+model OCRAsset {
+  id            String @id @default(cuid())
+  userId        String @map("user_id")
+  bookId        String @map("book_id")
+  reviewId      String? @map("review_id")  // レビューとの紐づけ（任意）
+
+  imageUrl      String @map("image_url")
+  extractedText String @map("extracted_text")
+
+  pageNo        Int? @map("page_no")
+  tags          String? // JSON文字列: 端末側OCRのメタ情報など
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  review Review? @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  koyoriItems KoyoriItem[]
+
+  @@index([bookId, pageNo])
+  @@index([userId, createdAt])
+  @@index([reviewId])
+  @@map("ocr_assets")
+}
+
+// =====================
+// Study Course (Paid)
+// =====================
+
+model StudyItem {
+  id              String @id @default(cuid())
+  userId          String @map("user_id")
+  bookId          String @map("book_id")
+
+  promptText      String @map("prompt_text")
+  answerText      String @map("answer_text")
+  explanationText String? @map("explanation_text")
+  referencePage   String? @map("reference_page")
+
+  // 論点記述・マーク
+  pointText       String? @map("point_text") // 論点を書かせた内容
+  pointMarked     Boolean @default(false) @map("point_marked") // 論点をマークしたか
+  pointMarkedAt   DateTime? @map("point_marked_at")
+
+  isGraduated     Boolean @default(false) @map("is_graduated")
+  graduatedAt     DateTime? @map("graduated_at")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book     Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  attempts StudyAttempt[]
+  snapshotSources SnapshotSource[] @relation("StudyItemSource") // 将来：学習成果をSnapshot化するなら使う
+
+  @@index([userId, bookId])
+  @@index([isGraduated])
+  @@map("study_items")
+}
+
+model StudyAttempt {
+  id                    String @id @default(cuid())
+
+  studyItemId            String @map("study_item_id")
+  userId                 String @map("user_id")
+
+  attemptedAt            DateTime @default(now()) @map("attempted_at")
+  attemptNo              Int @map("attempt_no")
+
+  recallResult           String @map("recall_result") // REMEMBERED, NOT_REMEMBERED, PARTIAL
+  understoodAnswer       String @map("understood_answer") // UNDERSTOOD, NOT_UNDERSTOOD, UNSURE
+  whereStuck             String? @map("where_stuck")
+  understoodExplanation  String @map("understood_explanation") // UNDERSTOOD, NOT_UNDERSTOOD, UNSURE
+
+  // 論点記述・マーク
+  pointText              String? @map("point_text") // この復習で書かせた論点
+  pointMarked            Boolean @default(false) @map("point_marked")
+  confusionToUnderstanding Int? @map("confusion_to_understanding") // 混乱→理解回数
+
+  timeToAnswerSec        Int? @map("time_to_answer_sec") // ★出題順「短時間優先」に必要
+
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  item StudyItem @relation(fields: [studyItemId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([studyItemId, attemptNo])
+  @@index([userId, attemptedAt])
+  @@index([studyItemId, attemptedAt])
+  @@map("study_attempts")
+}
+
+// =====================
+// Gift (URL only)
+// =====================
+
+model Gift {
+  id              String @id @default(cuid())
+
+  senderUserId    String @map("sender_user_id")
+  recipientUserId String? @map("recipient_user_id")
+  recipientEmail  String? @map("recipient_email")
+
+  bookId          String @map("book_id")
+
+  message         String?
+  purchaseUrl     String @map("purchase_url")
+  provider        String? // AMAZON/RAKUTEN/OTHER
+
+  giftToken       String @unique @map("gift_token")
+
+  status          String @default("DRAFT") // DRAFT, SENT, OPENED, ACCEPTED, EXPIRED, CANCELLED
+  channel         String? // COPY, MAIL, LINE, SNS, OTHER - ユーザー自己申告（分析用途）
+  landingVariant  String? @map("landing_variant") // A/B用（A=購入優先等）
+
+  sentAt          DateTime? @map("sent_at")
+  openedAt        DateTime? @map("opened_at")
+  acceptedAt      DateTime? @map("accepted_at")
+  expiresAt       DateTime? @map("expires_at")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  sender    User @relation("GiftSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  recipient User? @relation("GiftRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  book      Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  events GiftEvent[]
+
+  @@index([senderUserId, createdAt])
+  @@index([recipientEmail])
+  @@index([bookId, createdAt])
+  @@map("gifts")
+}
+
+model GiftEvent {
+  id          String @id @default(cuid())
+  giftId      String @map("gift_id")
+  type        String // GIFT_CREATED, GIFT_SENT, GIFT_OPENED, OUTBOUND_CLICKED, BOOK_ADDED, REGISTERED, REVIEW_VIEWED, REVIEW_CREATED, STUDY_VIEWED, SUBSCRIBED
+
+  // 受取側が未ログインでも追跡できるように
+  sessionId   String? @map("session_id")
+  actorUserId String? @map("actor_user_id")
+
+  metadata    String? // JSON文字列
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  gift  Gift @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@index([giftId, createdAt])
+  @@index([type, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("gift_events")
+}
+
+// =====================
+// Rate limit buckets (silent anti-abuse)
+// "回数制限なし"を成立させるための裏制御
+// =====================
+
+model RateLimitBucket {
+  id        String @id @default(cuid())
+
+  scope     String // GIFT_CREATE, GIFT_EVENT, SNAPSHOT_PUBLISH, READINGLOG_CREATE
+  key       String // 例: "ip:xxx", "user:xxx", "email:xxx"
+  windowSec Int @map("window_sec")
+  count     Int @default(0)
+  resetAt   DateTime @map("reset_at")
+
+  userId    String? @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([scope, key, windowSec])
+  @@index([scope, resetAt])
+  @@map("rate_limit_buckets")
+}
+
+// =====================
+// AffiliateStateLog（証跡）
+// =====================
+
+model AffiliateStateLog {
+  id          String  @id @default(cuid())
+  userId      String  @map("user_id")
+  fromState   String  @map("from_state") // OFF, ON, SUSPENDED
+  toState     String  @map("to_state") // OFF, ON, SUSPENDED
+  reason      String  // USER_OPT_IN, PAYMENT_FAILED, ADMIN_SUSPEND, USER_CANCEL, STUDY_SUBSCRIBED, CHECKOUT_COMPLETED, SUB_DELETED
+  actorType   String  @map("actor_type") // USER, SYSTEM, ADMIN, STRIPE
+  metadata    String? // JSON文字列（sourceなど分析用）
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([toState, createdAt])
+  @@map("affiliate_state_logs")
+}
+
+// =====================
+// WebhookEventLog（二重処理防止）
+// =====================
+
+model WebhookEventLog {
+  id          String @id // Stripe event.id をそのまま使用
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("webhook_event_logs")
+}
+
+// =====================
+// こより（Koyori）機能
+// =====================
+
+model Koyori {
+  id            String @id @default(cuid())
+  userId        String @map("user_id")
+  title         String
+  memo          String? // 短文まとめメモ
+  visibility    String @default("PRIVATE") // PRIVATE（将来拡張用）
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items         KoyoriItem[]
+
+  @@index([userId, updatedAt])
+  @@map("koyoris")
+}
+
+model KoyoriItem {
+  id            String @id @default(cuid())
+  koyoriId      String @map("koyori_id")
+  type          String // READING_LOG, OCR_TEXT, NOTE
+  sourceId      String @map("source_id") // 対象テーブルのID（ポリモーフィック）
+  order         Int
+  note          String? // そのアイテムに対するメモ
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  koyori        Koyori @relation(fields: [koyoriId], references: [id], onDelete: Cascade)
+
+  // リレーション（typeに応じてどちらかが設定される、sourceIdと整合性を保つ）
+  readingLogId  String? @map("reading_log_id")
+  ocrAssetId    String? @map("ocr_asset_id")
+  readingLog    ReadingLog? @relation(fields: [readingLogId], references: [id], onDelete: Cascade)
+  ocrAsset      OCRAsset? @relation(fields: [ocrAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([koyoriId, type, sourceId])
+  @@index([koyoriId, order])
+  @@map("koyori_items")
+}
+
+// =====================
+// Legacy Models (後で削除予定)
+// =====================
+
+model Subscription {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  planType      String   @map("plan_type")
+  maxMaterials  Int      @map("max_materials")
+  status        String   @default("active")
+  startedAt     DateTime @map("started_at")
+  endsAt        DateTime? @map("ends_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Material {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  bookId        String    @map("book_id")
+  status        String    @default("active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  book          Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  assets        Asset[]
+  studyRecords  StudyRecord[]
+
+  @@map("materials")
+}
+
+model Asset {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  bookId        String    @map("book_id")
+  materialId    String?   @map("material_id")
+  type          String
+  url           String
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  material      Material? @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  problemRecords StudyRecord[] @relation("ProblemAsset")
+  answerRecords StudyRecord[] @relation("AnswerAsset")
+  explanationRecords StudyRecord[] @relation("ExplanationAsset")
+  ocrTexts      OcrText[]
+
+  @@map("assets")
+}
+
+model StudyRecord {
+  id                  String    @id @default(cuid())
+  userId              String    @map("user_id")
+  bookId              String    @map("book_id")
+  materialId          String?   @map("material_id")
+  problemAssetId      String    @map("problem_asset_id")
+  answerAssetId       String?   @map("answer_asset_id")
+  explanationAssetId String?   @map("explanation_asset_id")
+  memoText            String?   @map("memo_text")
+  locationType        String    @map("location_type")
+  locationValue       String    @map("location_value")
+  locationNote        String?   @map("location_note")
+  step                Int       @default(1)
+  state               String    @default("active")
+  nextReviewAt        DateTime? @map("next_review_at")
+  lastReviewAt       DateTime? @map("last_review_at")
+  referencePage       String?   @map("reference_page")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book                Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  material            Material? @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  problemAsset        Asset     @relation("ProblemAsset", fields: [problemAssetId], references: [id])
+  answerAsset         Asset?    @relation("AnswerAsset", fields: [answerAssetId], references: [id])
+  explanationAsset    Asset?    @relation("ExplanationAsset", fields: [explanationAssetId], references: [id])
+  reviewSchedules     ReviewSchedule[]
+  reviewLogs           ReviewLog[]
+  notifications        Notification[]
+
+  @@map("study_records")
+}
+
+model ReviewSchedule {
+  id            String    @id @default(cuid())
+  studyRecordId String    @map("study_record_id")
+  nextReviewAt  DateTime  @map("next_review_at")
+  reviewType    String    @default("normal") @map("review_type")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  studyRecord   StudyRecord @relation(fields: [studyRecordId], references: [id], onDelete: Cascade)
+
+  @@unique([studyRecordId, reviewType])
+  @@map("review_schedules")
+}
+
+model ReviewLog {
+  id                    String    @id @default(cuid())
+  studyRecordId         String    @map("study_record_id")
+  step                  Int
+  recallSelfAssessment  String?   @map("recall_self_assessment")
+  finalResult           String?   @map("final_result")
+  answerTimeSeconds     Int?      @map("answer_time_seconds")
+  explanationUnderstood Boolean?  @map("explanation_understood")
+  at                    DateTime  @default(now())
+
+  studyRecord           StudyRecord @relation(fields: [studyRecordId], references: [id], onDelete: Cascade)
+
+  @@map("review_logs")
+}
+
+model Review {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  bookId          String    @map("book_id")
+  rating          Int
+  comment         String?   @default("")
+  searchKeywords  String?   @map("search_keywords")
+  favoritePhrase  String?   @map("favorite_phrase")
+  emotionTag      String    @map("emotion_tag")
+  recommendedBooks String?  @map("recommended_books")
+  isPublic        Boolean   @default(false) @map("is_public")
+  hasSpoiler      Boolean   @default(false) @map("has_spoiler")
+  
+  // 構造化フィールド（新規追加）
+  buyReason       String?   @map("buy_reason")        // 買う理由
+  goodPoints      String?   @map("good_points")       // 良かった点
+  missingPoints   String?   @map("missing_points")    // 足りない点
+  badPoints       String?   @map("bad_points")        // 悪かった点
+  readDate        DateTime? @map("read_date")        // 読んだ日
+  pagesRead       Int?      @map("pages_read")       // ページ数
+  ocrQuote        String?   @map("ocr_quote")         // OCR一文（引用）
+  
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book            Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  evolutionLogs   ReviewEvolutionLog[]
+  revenueShares   RevenueShare[]
+  revenueShareGateLogs RevenueShareGateLog[]
+  readingProgress ReadingProgress[]
+  ocrAssets       OCRAsset[]
+
+  @@index([bookId, isPublic, hasSpoiler])
+  @@index([isPublic, createdAt])
+  @@map("reviews")
+}
+
+model ReviewEvolutionLog {
+  id            String    @id @default(cuid())
+  reviewId      String    @map("review_id")
+  rating        Int?
+  comment       String?
+  searchKeywords String?  @map("search_keywords")
+  favoritePhrase String?  @map("favorite_phrase")
+  recommendedBooks String? @map("recommended_books")
+  emotionTag    String?   @map("emotion_tag")
+  wrongCount    Int?      @map("wrong_count")
+  masteryDays   Int?      @map("mastery_days")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  review        Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("review_evolution_logs")
+}
+
+model ReadingProgress {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  bookId        String    @map("book_id")
+  reviewId      String?   @map("review_id")  // レビューとの紐づけ（任意）
+  pagesRead     Int?      @map("pages_read")
+  percentRead   Float?    @map("percent_read")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book          Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  review        Review?   @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, bookId])
+  @@index([reviewId])
+  @@map("reading_progress")
+}
+
+// =====================
+// UserBook（ユーザー×本の中間テーブル：積読状態管理）
+// =====================
+
+model UserBook {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  bookId        String    @map("book_id")
+  status        String    @default("TSUNDOKU") // TSUNDOKU, READING, FINISHED, PAUSED
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book          Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@index([userId, status])
+  @@index([bookId, status])
+  @@map("user_books")
+}
+
+model Notification {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  studyRecordId String?   @map("study_record_id")
+  type          String
+  title         String
+  nextReviewAt  DateTime  @map("next_review_at")
+  isRead        Boolean   @default(false) @map("is_read")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studyRecord   StudyRecord? @relation(fields: [studyRecordId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, studyRecordId, type, nextReviewAt])
+  @@map("notifications")
+}
+
+model RevenueShare {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  reviewId      String?   @map("review_id")
+  amount        Int
+  revenueAmount Int       @map("revenue_amount")
+  status        String    @default("pending") @map("status")
+  description   String?
+  paidAt        DateTime? @map("paid_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  review        Review?   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("revenue_shares")
+}
+
+// RevenueShareGateLog（証跡）
+// - レビュー投稿は誰でもOK
+// - 報酬計上・分配は「有料 または affiliate opt-in(ON)」のみ
+//   をコード根拠として監査できるように、判定結果をログとして残す
+model RevenueShareGateLog {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  reviewId  String?  @map("review_id")
+  snapshotId String? @map("snapshot_id") // Snapshot経由の外部遷移計測用
+
+  source    String   // REVIEW_CREATED, REVIEW_UPDATED, PURCHASE_EVENT, OUTBOUND_CLICK, SNAPSHOT_CLICK
+  eligible  Boolean
+  reason    String   // ELIGIBLE, FREE_AND_AFFILIATE_OFF, USER_NOT_FOUND, SHARE_AMOUNT_ZERO, etc
+  metadata  String?  // JSON文字列（任意）
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  review    Review?  @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  snapshot  PublishedSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([eligible, createdAt])
+  @@index([reviewId])
+  @@index([snapshotId])
+  @@map("revenue_share_gate_logs")
+}
+
+model OcrText {
+  id            String    @id @default(cuid())
+  bookId        String    @map("book_id")
+  assetId       String?   @map("asset_id")
+  text          String
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  book          Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  asset         Asset?    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("ocr_texts")
+}
+
+// =====================
+// OCR従量課金（usage集計テーブル）
+// =====================
+
+model OcrUsage {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  year          Int      @map("year")
+  month         Int      @map("month") // 1-12
+  ocrChars      Int      @default(0) @map("ocr_chars") // OCR文字数
+  imagesCount   Int      @default(0) @map("images_count") // OCR画像枚数
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year, month])
+  @@index([userId, year, month])
+  @@map("ocr_usage")
+}
+
+model Meso {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  bookId        String    @map("book_id")
+  title         String
+  description   String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book          Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  items         MesoItem[]
+  macroItems    MacroItem[]
+
+  @@map("mesos")
+}
+
+model MesoItem {
+  id            String    @id @default(cuid())
+  mesoId        String    @map("meso_id")
+  readingLogId  String    @map("reading_log_id")
+  order         Int
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  meso          Meso      @relation(fields: [mesoId], references: [id], onDelete: Cascade)
+  readingLog    ReadingLog @relation(fields: [readingLogId], references: [id], onDelete: Cascade)
+
+  @@unique([mesoId, readingLogId])
+  @@map("meso_items")
+}
+
+model Macro {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  bookId        String    @map("book_id")
+  title         String
+  content       String
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book          Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  items         MacroItem[]
+
+  @@unique([userId, bookId])
+  @@map("macros")
+}
+
+model MacroItem {
+  id            String    @id @default(cuid())
+  macroId       String    @map("macro_id")
+  readingLogId  String?   @map("reading_log_id")
+  mesoId        String?   @map("meso_id")
+  order         Int
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  macro         Macro     @relation(fields: [macroId], references: [id], onDelete: Cascade)
+  readingLog    ReadingLog? @relation(fields: [readingLogId], references: [id], onDelete: Cascade)
+  meso          Meso?     @relation(fields: [mesoId], references: [id], onDelete: Cascade)
+
+  @@map("macro_items")
+}

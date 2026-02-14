@@ -1,0 +1,10 @@
+﻿
+> read-to-evolution@1.0.0 dev
+> next dev
+
+  笆ｲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+  - Environments: .env
+
+ 笨・Starting...
+ 笨・Ready in 1208ms

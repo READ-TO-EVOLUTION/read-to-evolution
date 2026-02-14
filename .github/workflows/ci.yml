@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify repository context
+        shell: powershell
+        run: |
+          if (-not (Test-Path ".git")) { throw ".git directory not found. checkout may have failed." }
+          git rev-parse --is-inside-work-tree
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Show Node/npm versions
+        shell: powershell
+        run: |
+          node -v
+          npm -v
+
+      - name: Install deps
+        shell: powershell
+        run: |
+          npm ci
+
+      - name: Prisma generate
+        shell: powershell
+        run: |
+          npx prisma generate
+
+      - name: Verify .env is not tracked
+        shell: powershell
+        run: |
+          if (Test-Path ".env") {
+            Write-Host ".env exists (content will NOT be shown). Checking if it is tracked..."
+            git ls-files --error-unmatch .env
+            throw ".env is tracked by git. Remove it from tracking immediately."
+          } else {
+            Write-Host ".env not found (expected in CI)."
+          }
+
+      - name: Scan risky TOP-LEVEL env usage
+        shell: powershell
+        run: |
+          .\scripts\scan-top-level-env.ps1
+
+      - name: Remove .next before build (safe cleanup)
+        shell: powershell
+        run: |
+          if (Test-Path ".next") { Remove-Item -Recurse -Force ".next" }
+
+      - name: Build without .env
+        shell: powershell
+        run: |
+          .\scripts\test-build-without-env.ps1
+
+      - name: Remove .next after build (safe cleanup)
+        shell: powershell
+        run: |
+          if (Test-Path ".next") { Remove-Item -Recurse -Force ".next" }
+
+      - name: Normal build
+        shell: powershell
+        run: |
+          # Use cmd /c to avoid PowerShell 5.1 stderr handling issues
+          $oldEap = $ErrorActionPreference
+          $ErrorActionPreference = "Continue"
+          cmd /c "npm run build"
+          $buildExitCode = $LASTEXITCODE
+          $ErrorActionPreference = $oldEap
+          if ($buildExitCode -ne 0) { exit $buildExitCode }
