@@ -216,6 +216,13 @@ npm run build
   - Ensure `.env` is in `.gitignore` and never committed
   - Use lazy initialization for environment variables
 
+## Last Known Green Run
+
+- **Run URL**: https://github.com/wada0325/read-to-evolution/actions/runs/<run-id>
+- **Date**: 2025-01-27 (JST)
+- **Commit**: 87b48e2
+- **Status**: All steps passed (green)
+
 ## Related Files
 
 - `.github/workflows/ci.yml`: CI workflow definition
