@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { isBetaClosedClient } from '@/lib/feature-flags-client'
 
 type RevenueShare = {
   id: string
@@ -23,10 +25,18 @@ type RevenueShare = {
 }
 
 export default function RevenueSharesPage() {
+  const router = useRouter()
   const [revenueShares, setRevenueShares] = useState<RevenueShare[]>([])
   const [totalAmount, setTotalAmount] = useState(0)
   const [pendingAmount, setPendingAmount] = useState(0)
   const [loading, setLoading] = useState(true)
+
+  // Beta Closed: Redirect to home (replace to prevent back button)
+  useEffect(() => {
+    if (isBetaClosedClient()) {
+      router.replace('/')
+    }
+  }, [router])
 
   useEffect(() => {
     fetchRevenueShares()

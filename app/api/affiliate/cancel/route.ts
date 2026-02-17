@@ -2,12 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getUserForAffiliate, isAffiliateSubscriber, logAffiliateStateChange } from '@/lib/affiliate'
+import { isBetaClosed } from '@/lib/feature-flags'
 
 /**
  * 解約（OFFへ）
  * AFFILIATE_SUBのみ対象。STUDY_SUBは勉強コース側で扱う
  */
 export async function POST(request: NextRequest) {
+  if (isBetaClosed()) {
+    console.warn('[BETA_CLOSED_BLOCK]', request.nextUrl.pathname)
+    return NextResponse.json(
+      { error: 'Disabled in Beta Closed', code: 'BETA_CLOSED_DISABLED' },
+      { status: 403 }
+    )
+  }
+
   try {
     const userId = await requireAuth(request)
     if (userId instanceof NextResponse) return userId

@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import PaywallModal from '@/components/PaywallModal'
 import BookSearchInput, { BookSearchResult } from '@/components/BookSearchInput'
 import FirstTimeGuide from '@/components/gifts/FirstTimeGuide'
+import { isBetaClosedClient } from '@/lib/feature-flags-client'
 
 type Book = {
   id: string
@@ -29,6 +31,7 @@ type Gift = {
 }
 
 export default function GiftsPage() {
+  const router = useRouter()
   const [gifts, setGifts] = useState<Gift[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -48,6 +51,13 @@ export default function GiftsPage() {
   } | null>(null)
 
   const [showPaywall, setShowPaywall] = useState(false)
+
+  // Beta Closed: Redirect to home (replace to prevent back button)
+  useEffect(() => {
+    if (isBetaClosedClient()) {
+      router.replace('/')
+    }
+  }, [router])
 
   useEffect(() => {
     fetchGifts()

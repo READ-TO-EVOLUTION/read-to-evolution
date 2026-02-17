@@ -5,6 +5,15 @@
 > **注意**: このプロジェクトは `yoridori` とは別のプロジェクトです。  
 > **仕様書**: [SPECIFICATION.md](./SPECIFICATION.md) が実装の最上位基準です。
 
+## Beta Closed 設定
+
+限定公開中は以下の環境変数を必ず設定してください：
+
+```
+BETA_CLOSED=true
+NEXT_PUBLIC_BETA_CLOSED=true
+```
+
 ## 概要
 
 READ TO EVOLUTIONは、著作権に配慮した学習管理プラットフォームです。
@@ -181,6 +190,35 @@ npm run db:studio
 # データベーススキーマ適用
 npm run db:push
 ```
+
+## Beta Closed Scope
+
+This project is currently in **limited public release (Beta Closed)** phase.
+
+### Available Features
+
+**Public Access (No Authentication Required)**:
+- Public review feed (`/r`)
+- Public snapshot pages (`/s/[slug]`)
+- Public gift pages (`/gifts/[slug]` - read-only)
+- Login and registration
+
+**Authenticated User Features**:
+- Book management (search, add, delete)
+- Review creation and management
+- ReadingLog/Meso/Macro creation
+- Study course (today's tasks, review schedule)
+- PublishedSnapshot creation
+
+### Disabled Features (Beta Phase)
+
+The following features are **disabled** or **restricted** during the beta phase:
+- Affiliate system (payment processing)
+- Gift creation (external sharing)
+- OCR features (usage-based billing)
+- Revenue share (calculation and payout)
+
+For detailed feature scope, see [docs/BETA_CLOSED_SCOPE.md](./docs/BETA_CLOSED_SCOPE.md).
 
 ## ライセンス
 

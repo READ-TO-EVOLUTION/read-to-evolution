@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { isStudySubscriber, logAffiliateStateChange } from '@/lib/affiliate'
 import { createAffiliateCheckoutSession, handleStripeEnvError } from '@/lib/stripe'
+import { isBetaClosed } from '@/lib/feature-flags'
 
 const optInSchema = z.object({
   intent: z.literal('ENABLE_AFFILIATE'),
@@ -14,6 +15,14 @@ const optInSchema = z.object({
  * 報酬ONのリクエスト（課金フロー開始）
  */
 export async function POST(request: NextRequest) {
+  if (isBetaClosed()) {
+    console.warn('[BETA_CLOSED_BLOCK]', request.nextUrl.pathname)
+    return NextResponse.json(
+      { error: 'Disabled in Beta Closed', code: 'BETA_CLOSED_DISABLED' },
+      { status: 403 }
+    )
+  }
+
   try {
     const userId = await requireAuth(request)
     if (userId instanceof NextResponse) return userId

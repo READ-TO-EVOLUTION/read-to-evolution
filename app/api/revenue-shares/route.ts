@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/middleware'
+import { isBetaClosed } from '@/lib/feature-flags'
 
 /**
  * 収益還元一覧取得（自分の還元履歴のみ）
  * 報酬対象ユーザー（有料またはaffiliate opt-in） のみ対象
  */
 export async function GET(request: NextRequest) {
+  if (isBetaClosed()) {
+    console.warn('[BETA_CLOSED_BLOCK]', request.nextUrl.pathname)
+    return NextResponse.json(
+      { error: 'Disabled in Beta Closed', code: 'BETA_CLOSED_DISABLED' },
+      { status: 403 }
+    )
+  }
+
   try {
     const userId = await requireAuth(request)
     if (userId instanceof NextResponse) return userId

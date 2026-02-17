@@ -6,11 +6,19 @@ import { prisma } from '@/lib/prisma'
 import { logAffiliateStateChange } from '@/lib/affiliate'
 import Stripe from 'stripe'
 
+import { isBetaClosed } from '@/lib/feature-flags'
+
 /**
  * Stripe Webhook Handler
  * 認証不要（Stripeからの直接呼び出し）
  */
 export async function POST(req: NextRequest) {
+  if (isBetaClosed()) {
+    console.warn('[BETA_CLOSED_BLOCK]', req.nextUrl.pathname, '- Returning 204 to prevent Stripe retries')
+    // Return 204 No Content to prevent Stripe from retrying
+    return new NextResponse(null, { status: 204 })
+  }
+
   const signature = req.headers.get('stripe-signature')
   if (!signature) {
     return NextResponse.json({ error: 'Missing stripe-signature' }, { status: 400 })

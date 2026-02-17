@@ -10,6 +10,7 @@ import StatusBar from '@/components/home/StatusBar'
 import Chair from '@/components/home/Chair'
 import Desk from '@/components/home/Desk'
 import QuickStartButtons from '@/components/home/QuickStartButtons'
+import { isBetaClosedClient } from '@/lib/feature-flags-client'
 
 import type { EmotionState } from '@/lib/emotion'
 
@@ -146,6 +147,15 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 via-white to-amber-50 relative overflow-hidden">
+      {/* Beta Closed 表示 */}
+      {isBetaClosedClient() && (
+        <div className="relative z-20 bg-yellow-100 border-b border-yellow-300 px-4 py-2 text-center">
+          <p className="text-sm text-yellow-800 font-medium">
+            現在は限定公開中です
+          </p>
+        </div>
+      )}
+
       {/* 背景：本棚 */}
       <Bookshelf books={books} />
 

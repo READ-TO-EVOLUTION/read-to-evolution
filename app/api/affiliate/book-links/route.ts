@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getUserForAffiliate, isAffiliateOn, isStudySubscriber } from '@/lib/affiliate'
+import { isBetaClosed } from '@/lib/feature-flags'
 
 const createBookLinkSchema = z.object({
   bookId: z.string().optional(),
@@ -15,6 +16,14 @@ const createBookLinkSchema = z.object({
  * affiliateState==ON 必須（または STUDY_SUB）
  */
 export async function POST(request: NextRequest) {
+  if (isBetaClosed()) {
+    console.warn('[BETA_CLOSED_BLOCK]', request.nextUrl.pathname)
+    return NextResponse.json(
+      { error: 'Disabled in Beta Closed', code: 'BETA_CLOSED_DISABLED' },
+      { status: 403 }
+    )
+  }
+
   try {
     const userId = await requireAuth(request)
     if (userId instanceof NextResponse) return userId

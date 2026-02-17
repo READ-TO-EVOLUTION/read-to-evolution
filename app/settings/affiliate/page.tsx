@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import PaywallModal from '@/components/PaywallModal'
+import { isBetaClosedClient } from '@/lib/feature-flags-client'
 
 type AffiliateState = {
   affiliateState: string
@@ -29,6 +30,13 @@ export default function AffiliateSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [showPaywall, setShowPaywall] = useState(false)
   const [processing, setProcessing] = useState(false)
+
+  // Beta Closed: Redirect to home (replace to prevent back button)
+  useEffect(() => {
+    if (isBetaClosedClient()) {
+      router.replace('/')
+    }
+  }, [router])
 
   useEffect(() => {
     fetchState()

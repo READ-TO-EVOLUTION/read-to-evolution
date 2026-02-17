@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/middleware'
 import { z } from 'zod'
+import { isBetaClosed } from '@/lib/feature-flags'
 
 // スラッグ生成用の関数（衝突率を極小化するため16文字のランダム文字列）
 function generateSlug(): string {
@@ -53,6 +54,14 @@ export async function GET(request: NextRequest) {
  * Gift作成
  */
 export async function POST(request: NextRequest) {
+  if (isBetaClosed()) {
+    console.warn('[BETA_CLOSED_BLOCK]', request.nextUrl.pathname)
+    return NextResponse.json(
+      { error: 'Disabled in Beta Closed', code: 'BETA_CLOSED_DISABLED' },
+      { status: 403 }
+    )
+  }
+
   try {
     const userId = await requireAuth(request)
     if (userId instanceof NextResponse) return userId
