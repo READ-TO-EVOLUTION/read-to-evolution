@@ -218,9 +218,9 @@ npm run build
 
 ## Last Known Green Run
 
-- **Run URL**: https://github.com/wada0325/read-to-evolution/actions/runs/22017659977
+- **Run URL**: https://github.com/wada0325/read-to-evolution/actions/runs/22083930474
 - **Date**: 2026-02-14 (JST)
-- **Commit**: 87b48e2
+- **Commit**: 779d0ca
 - **Status**: All steps passed (green)
 
 ## Related Files
