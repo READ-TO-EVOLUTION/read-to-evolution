@@ -1,4 +1,8 @@
 import Stripe from 'stripe'
+import { checkStripeKeySafety } from './safety-check'
+
+// Safety check: Prevent live Stripe key in Beta Closed
+checkStripeKeySafety()
 
 let cachedStripe: Stripe | null = null
 
