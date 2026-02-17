@@ -416,6 +416,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-beta-closed-dan
   -BaseUrl http://localhost:3000 `
   -Email test@example.com `
   -Password testpassword
+
+# Production verification (unauthenticated)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-beta-closed-dangerous-apis.ps1 `
+  -BaseUrl https://YOUR_PRODUCTION_URL
+
+# Production verification (authenticated)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-beta-closed-dangerous-apis.ps1 `
+  -BaseUrl https://YOUR_PRODUCTION_URL `
+  -Email test@example.com `
+  -Password testpassword
 ```
 
 **What it tests**:
