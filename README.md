@@ -180,6 +180,9 @@ npm run db:studio
 
 # データベーススキーマ適用
 npm run db:push
+
+CI test line
+
 ```
 
 ## ライセンス
