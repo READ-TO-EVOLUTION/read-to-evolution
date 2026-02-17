@@ -476,8 +476,59 @@ Exit code: 0
 
 ---
 
+## 9. Production Environment Setup
+
+### 9.1 Required Environment Variables
+
+**In Production (Vercel/etc), set:**
+- `BETA_CLOSED=true`
+- `NEXT_PUBLIC_BETA_CLOSED=true`
+
+**Note:** While fail-safe design blocks dangerous features even if unset, explicitly setting these to `true` prevents operational accidents.
+
+### 9.2 Production Verification (UI)
+
+**Check:**
+1. Open production URL in browser
+2. Verify "現在は限定公開中です" banner is displayed at top
+3. Banner should have yellow background
+
+### 9.3 Production Verification (API)
+
+**Run verification script:**
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/test-beta-closed-dangerous-apis.ps1 `
+  -BaseUrl https://YOUR_PRODUCTION_URL
+```
+
+**Pass Criteria:**
+- 8/8 tests PASS
+- Stripe webhook returns 204
+- All other dangerous APIs return 403
+- No 200/201/302 responses
+
+### 9.4 Authenticated Test (Manual)
+
+**Run with test user credentials:**
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/test-beta-closed-dangerous-apis.ps1 `
+  -BaseUrl https://YOUR_PRODUCTION_URL `
+  -Email test@example.com `
+  -Password testpassword
+```
+
+**Pass Criteria:**
+- All 8 authenticated tests PASS (403/204 only)
+- No 200/201 responses
+
+---
+
 ## Related Documents
 
+- `docs/CLOSED_BETA_TEST_CHECKLIST.md` - Tester checklist for closed beta
+- `docs/PUBLIC_RELEASE_ROADMAP.md` - Phased release plan
 - `docs/BETA_CLOSED_SCOPE.md` - Feature scope definition
 - `docs/CI_TROUBLESHOOTING.md` - CI/CD status
 - `docs/ENV_REQUIRED.md` - Environment variable requirements
