@@ -87,6 +87,7 @@ function Test-DangerousAPI {
             Uri = $url
             Method = $Method
             Headers = $Headers
+            UseBasicParsing = $true
             ErrorAction = "Stop"
         }
 
