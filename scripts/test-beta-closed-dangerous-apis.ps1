@@ -40,6 +40,7 @@ if ($Token) {
             -Method POST `
             -ContentType "application/json" `
             -Body $loginBody `
+            -UseBasicParsing `
             -ErrorAction Stop
 
         if ($loginResponse.StatusCode -eq 200) {
