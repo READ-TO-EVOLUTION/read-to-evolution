@@ -393,7 +393,7 @@ A PowerShell script is provided to verify that dangerous APIs are blocked when B
 **Usage**:
 
 ```powershell
-# Basic usage (localhost)
+# Basic usage (localhost, unauthenticated tests only)
 powershell -ExecutionPolicy Bypass -File scripts/test-beta-closed-dangerous-apis.ps1 -BaseUrl http://localhost:3000
 
 # With authentication (email/password)
@@ -410,6 +410,12 @@ powershell -ExecutionPolicy Bypass -File scripts/test-beta-closed-dangerous-apis
 # Production URL
 powershell -ExecutionPolicy Bypass -File scripts/test-beta-closed-dangerous-apis.ps1 `
   -BaseUrl https://your-production-url.com
+
+# NonInteractive mode (CI/CD compatible)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-beta-closed-dangerous-apis.ps1 `
+  -BaseUrl http://localhost:3000 `
+  -Email test@example.com `
+  -Password testpassword
 ```
 
 **What it tests**:
